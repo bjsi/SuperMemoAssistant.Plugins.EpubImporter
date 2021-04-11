@@ -1,0 +1,76 @@
+<Project>
+
+  <PropertyGroup Label="PackageInfo">
+    <Authors>james</Authors>
+    <Copyright>© james</Copyright>
+    <Company>james</Company>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageIcon>icon.png</PackageIcon>
+    <PackageIconUrl>https://github.com/supermemo/Documentation/raw/master/docs/sma/content/images/icons/robot.ico</PackageIconUrl>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl></RepositoryUrl>
+  </PropertyGroup>
+  
+  <PropertyGroup Label="Package Settings">
+    <PackageOutputPath Condition=" '$(PackageOutputPath)' == '' ">$(SolutionDir)releases\</PackageOutputPath>
+    <IncludeSymbols Condition=" '$(IncludeSymbols)' == '' ">false</IncludeSymbols>
+    <SymbolPackageFormat Condition=" '$(SymbolPackageFormat)' == '' ">snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+  
+  <ItemGroup Label="Package content (Default)">
+    <None Include="$(SolutionDir)assets\images\icons\robot-128.png" Visible="False" Pack="true" PackagePath="\icon.png" />
+  </ItemGroup>
+  
+  <PropertyGroup Label="Build">
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ErrorReport>prompt</ErrorReport>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <NoWarn>67;NU1605;NU5105;$(NoWarn)</NoWarn>
+    <CodeAnalysisRuleSet>$(SolutionDir)src\CodeStyle.ruleset</CodeAnalysisRuleSet>
+  </PropertyGroup>
+  
+  <PropertyGroup Label="Build (Paths)">
+    <ProjectName Condition=" '$(ProjectName)' == '' ">$(MSBuildProjectName)</ProjectName>
+    <BaseOutputPath>$(SolutionDir)build\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(BaseOutputPath)obj\$(ProjectName)\</BaseIntermediateOutputPath>
+    <OutputPath Condition=" '$(OutputPath)' == '' ">$(BaseOutputPath)$(ProjectName)\$(Configuration)\$(Platform)\</OutputPath>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Build (C++ Paths)" Condition=" '$(MSBuildProjectExtension)'=='.vcxproj' ">
+    <Platform Condition=" '$(Platform)' == '' OR '$(Platform)' == 'AnyCPU' ">Win32</Platform>
+    <IntDir>$(BaseIntermediateOutputPath)$(Configuration)\$(Platform)\</IntDir>
+    <OutDir>$(OutputPath)$(ProjectName)\$(Platform)\</OutDir>
+  </PropertyGroup>
+  
+  <PropertyGroup Label="Build (Debug)" Condition=" $(Configuration.ToLower().Contains('debug')) ">
+    <DebugSymbols>true</DebugSymbols>
+    <DefineConstants>$(DefineConstants);DEBUG;TRACE</DefineConstants>
+    <DebugType>full</DebugType>
+    <ErrorReport>prompt</ErrorReport>
+  </PropertyGroup>
+  
+  <PropertyGroup Label="Build (Release)" Condition=" $(Configuration.ToLower().Contains('release')) ">
+    <DefineConstants>$(DefineConstants);TRACE</DefineConstants>
+    <Optimize>true</Optimize>
+    <DebugType>pdbonly</DebugType>
+  </PropertyGroup>
+  
+  <PropertyGroup Label="Build (x86)" Condition=" '$(Platform)' == 'x86' ">
+    <PlatformTarget>x86</PlatformTarget>
+  </PropertyGroup>
+  
+  <PropertyGroup Label="Automatic Version 2">
+    <UpdateAssemblyVersion>True</UpdateAssemblyVersion>
+    <UpdateAssemblyFileVersion>True</UpdateAssemblyFileVersion>
+    <UpdateAssemblyInfoVersion>True</UpdateAssemblyInfoVersion>
+    <UpdatePackageVersion>False</UpdatePackageVersion>
+    <AssemblyInfoVersionType>SettingsVersion</AssemblyInfoVersionType>
+    <InheritWinAppVersionFrom>None</InheritWinAppVersionFrom>
+    <AssemblyVersionSettings>IncrementOnDemand.IncrementOnDemand.IncrementOnDemand.None</AssemblyVersionSettings>
+    <AssemblyFileVersionSettings>IncrementOnDemand.IncrementOnDemand.IncrementOnDemand.None</AssemblyFileVersionSettings>
+    <AssemblyInfoVersionSettings>IncrementOnDemand.IncrementOnDemand.IncrementOnDemand.None</AssemblyInfoVersionSettings>
+  </PropertyGroup>
+
+</Project>
