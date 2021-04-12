@@ -205,12 +205,19 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
     private int ImportChapter(IElement parentFolder, EpubBook book, EpubChapter chapter, string baseUrl)
     {
       var refs = CreateChapterReference(book, chapter);
-      LogTo.Debug("Chpater Title: " + refs.Title);
       try
       {
-        string html = book.Resources.Html.Where(x => Path.GetFileName(x.FileName) == chapter.FileName).First().TextContent;
+        string html = book.Resources.Html.Where(x => x.AbsolutePath == chapter.AbsolutePath).First().TextContent;
         html = UpdateLocalLinks(html, baseUrl);
-        return CreateSMTopic(html, refs, parentFolder);
+        var chapterId = CreateSMTopic(html, refs, parentFolder);
+        var chapterEl = Svc.SM.Registry.Element[chapterId];
+        if (chapterEl != null)
+        {
+          foreach (var sub in chapter.SubChapters)
+            ImportChapter(chapterEl, book, sub, baseUrl);
+        }
+
+        return chapterId;
       }
       catch (Exception ex)
       {
@@ -226,8 +233,11 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
       doc.LoadHtml(html);
       foreach (var node in doc.DocumentNode.Descendants())
       {
+        if (node.Name != "script")
+        {
           AdjustAttributes(node, baseUrl, "href");
           AdjustAttributes(node, baseUrl, "src");
+        }
       }
 
       return doc.DocumentNode.OuterHtml;
