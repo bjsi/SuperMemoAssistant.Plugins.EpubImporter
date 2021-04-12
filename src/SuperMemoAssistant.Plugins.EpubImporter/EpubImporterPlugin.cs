@@ -1,5 +1,6 @@
 ﻿using Anotar.Serilog;
 using EpubSharp;
+using HtmlAgilityPack;
 using Microsoft.Win32;
 using SuperMemoAssistant.Interop.Plugins;
 using SuperMemoAssistant.Interop.SuperMemo.Content.Contents;
@@ -141,9 +142,17 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
           return;
         }
 
+        var unzipped = UnzipEpub(filepath);
+        if (!Directory.Exists(unzipped))
+        {
+          LogTo.Debug("Failed to unzip Epub - the unzipped folder does not exist.");
+          return;
+        }
+
+        var baseUrl = Path.Combine(unzipped, Path.GetDirectoryName(book.Format.Ocf.RootFilePath));
         foreach (var chapter in book.TableOfContents)
         {
-          if (ImportChapter(parentEl, book, chapter) == -1)
+          if (ImportChapter(parentEl, book, chapter, baseUrl) == -1)
           {
             LogTo.Debug("Failed to import chapter.");
             break;
@@ -153,6 +162,24 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
       catch (Exception e)
       {
         LogTo.Debug($"Failed to import {filepath} with exception {e}");
+      }
+    }
+
+    private string UnzipEpub(string originalFilepath)
+    {
+      try
+      {
+        var outputName = Path.GetFileNameWithoutExtension(originalFilepath) + DateTime.Now.Ticks.ToString();
+        var outputBase = Path.GetDirectoryName(originalFilepath);
+        var outputPath = Path.Combine(outputBase, outputName);
+        Directory.CreateDirectory(outputPath);
+        System.IO.Compression.ZipFile.ExtractToDirectory(originalFilepath, outputPath);
+        return outputPath;
+      }
+      catch (Exception e)
+      {
+        LogTo.Error($"Failed to extract epub zip file with exception {e}");
+        return null;
       }
     }
 
@@ -175,12 +202,14 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
         .WithTitle(book.Title + ": " + chapter.Title);
     }
 
-    private int ImportChapter(IElement parentFolder, EpubBook book, EpubChapter chapter)
+    private int ImportChapter(IElement parentFolder, EpubBook book, EpubChapter chapter, string baseUrl)
     {
       var refs = CreateChapterReference(book, chapter);
+      LogTo.Debug("Chpater Title: " + refs.Title);
       try
       {
         string html = book.Resources.Html.Where(x => Path.GetFileName(x.FileName) == chapter.FileName).First().TextContent;
+        html = UpdateLocalLinks(html, baseUrl);
         return CreateSMTopic(html, refs, parentFolder);
       }
       catch (Exception ex)
@@ -188,6 +217,44 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
         LogTo.Debug($"Failed to import chapter with exception {ex}");
         return -1;
       }
+    }
+
+    private string UpdateLocalLinks(string html, string baseUrl)
+    {
+      // Change local links to absolute links
+      var doc = new HtmlDocument();
+      doc.LoadHtml(html);
+      foreach (var node in doc.DocumentNode.Descendants())
+      {
+          AdjustAttributes(node, baseUrl, "href");
+          AdjustAttributes(node, baseUrl, "src");
+      }
+
+      return doc.DocumentNode.OuterHtml;
+    }
+
+    static void AdjustAttributes(HtmlNode root, string baseUrl, string attrName)
+    {
+      var query =
+          from node in root.Descendants()
+          let attr = node.Attributes[attrName]
+          where attr != null
+          select attr;
+      foreach (var attr in query)
+      {
+        attr.Value = GetAbsoluteUrlString(baseUrl, attr.Value);
+      }
+    }
+
+    static string GetAbsoluteUrlString(string baseUrl, string url)
+    {
+      var uri = new Uri(url, UriKind.RelativeOrAbsolute);
+      if (!uri.IsAbsoluteUri)
+      {
+        var newUrl = Path.Combine(baseUrl, url.TrimStart('.').TrimStart('\\', '/'));
+        return newUrl;
+      }
+      return uri.ToString();
     }
 
     private int CreateSMTopic(string html, References refs, IElement parent)
@@ -217,6 +284,7 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
           .WithParent(parent)
           .WithStatus(dismissed ? ElementStatus.Dismissed : ElementStatus.Memorized)
           .DoNotDisplay()
+          .WithTitle(refs.Title)
           .WithReference((_) => refs)
       );
 
@@ -231,8 +299,6 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
         return -1;
       }
     }
-
-
 
     /// <summary>
     /// Show a dialog which prompts the user to pick an Epub file to import
