@@ -7,6 +7,7 @@ using SuperMemoAssistant.Interop.SuperMemo.Content.Contents;
 using SuperMemoAssistant.Interop.SuperMemo.Elements.Builders;
 using SuperMemoAssistant.Interop.SuperMemo.Elements.Models;
 using SuperMemoAssistant.Interop.SuperMemo.Elements.Types;
+using SuperMemoAssistant.Plugins.EpubImporter.UI;
 using SuperMemoAssistant.Services;
 using SuperMemoAssistant.Services.IO.HotKeys;
 using SuperMemoAssistant.Services.IO.Keyboard;
@@ -98,7 +99,7 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
     {
 
       LoadConfig().Wait();
-      
+
       Svc.HotKeyManager.RegisterGlobal(
         "ImportEPUB",
         "Import an Epub file",
@@ -108,6 +109,21 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
         );
     }
 
+    private bool ValidateToS()
+    {
+      if (Config.HasAgreedToTOS)
+        return true;
+
+      var consent = TermsOfLicense.AskConsent();
+
+      if (!consent)
+        return false;
+
+      Config.HasAgreedToTOS = true;
+
+      return true;
+    }
+
     #endregion
 
 
@@ -115,6 +131,10 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
 
     private void OpenFile()
     {
+
+      if (!ValidateToS())
+        return;
+
       if (ImportSemaphore.Wait(0) == false)
         return;
 

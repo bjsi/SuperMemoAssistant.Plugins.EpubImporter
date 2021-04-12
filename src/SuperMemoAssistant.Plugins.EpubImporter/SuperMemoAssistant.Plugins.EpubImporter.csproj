@@ -68,4 +68,9 @@
     <Exec Command="xcopy /h /i /c /k /e /r /y &quot;$(TargetDir)*&quot; &quot;%25UserProfile%25\Documents\SuperMemoAssistant\Plugins\Development\$(ProjectName)&quot;" />
 
   </Target>
+  <ItemGroup>
+    <None Update="UI\TermsOfLicense.Window">
+      <Generator>MSBuild:Compile</Generator>
+    </None>
+  </ItemGroup>
 </Project>

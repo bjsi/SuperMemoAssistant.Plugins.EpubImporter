@@ -53,6 +53,8 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
     [JsonIgnore]
     public bool IsChanged { get; set; }
 
+    public bool HasAgreedToTOS { get; set; } = false;
+
     public override string ToString()
     {
       return "Epub Importer Settings";
