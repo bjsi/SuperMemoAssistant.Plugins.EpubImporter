@@ -18,7 +18,7 @@ Note: If you are upgrading from an older version, you should delete the older ve
 
 There is a single command:
 
-1. Import an Epub (Ctrl+Alt+Shift+E)
+1. Import an Epub (Ctrl+Shift+Y)
 
 ### Settings
 
