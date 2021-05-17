@@ -1,8 +1,6 @@
 ﻿using Anotar.Serilog;
-using EpubSharp;
 using HtmlAgilityPack;
 using Microsoft.Win32;
-using SuperMemoAssistant.Interop.Plugins;
 using SuperMemoAssistant.Interop.SuperMemo.Content.Contents;
 using SuperMemoAssistant.Interop.SuperMemo.Elements.Builders;
 using SuperMemoAssistant.Interop.SuperMemo.Elements.Models;
@@ -11,17 +9,19 @@ using SuperMemoAssistant.Plugins.EpubImporter.UI;
 using SuperMemoAssistant.Services;
 using SuperMemoAssistant.Services.IO.HotKeys;
 using SuperMemoAssistant.Services.IO.Keyboard;
+using SuperMemoAssistant.Services.Sentry;
 using SuperMemoAssistant.Services.UI.Configuration;
 using SuperMemoAssistant.Sys.IO.Devices;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Windows.Input;
+using VersOne.Epub;
 
 #region License & Metadata
 
@@ -46,7 +46,7 @@ using System.Windows.Input;
 // DEALINGS IN THE SOFTWARE.
 // 
 // 
-// Created On:   1/24/2021 11:05:26 AM
+// Created On:   5/12/2021 11:08:20 AM
 // Modified By:  james
 
 #endregion
@@ -59,12 +59,12 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
   // ReSharper disable once UnusedMember.Global
   // ReSharper disable once ClassNeverInstantiated.Global
   [SuppressMessage("Microsoft.Naming", "CA1724:TypeNamesShouldNotMatchNamespaces")]
-  public class EpubImporterPlugin : SMAPluginBase<EpubImporterPlugin>
+  public class EpubImporterPlugin : SentrySMAPluginBase<EpubImporterPlugin>
   {
     #region Constructors
 
     /// <inheritdoc />
-    public EpubImporterPlugin() { }
+    public EpubImporterPlugin() : base("Enter your Sentry.io api key (strongly recommended)") { }
 
     #endregion
 
@@ -85,33 +85,35 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
 
     #endregion
 
-    private async Task LoadConfig()
-    {
-      Config = await Svc.Configuration.Load<EpubImporterCfg>() ?? new EpubImporterCfg();
-    }
-
-
 
     #region Methods Impl
 
-    /// <inheritdoc />
-    protected override void PluginInit()
+    private void LoadConfig()
     {
+      Config = Svc.Configuration.Load<EpubImporterCfg>() ?? new EpubImporterCfg();
+    }
 
-      LoadConfig().Wait();
+    /// <inheritdoc />
+    protected override void OnSMStarted(bool wasSMAlreadyStarted)
+    {
+      LoadConfig();
 
       Svc.HotKeyManager.RegisterGlobal(
         "ImportEPUB",
         "Import an Epub file",
-        HotKeyScope.SMBrowser,
+        HotKeyScopes.SMBrowser,
         new HotKey(Key.Y, KeyModifiers.CtrlShift),
         OpenFile
         );
+
+      base.OnSMStarted(wasSMAlreadyStarted);
     }
 
     private bool ValidateToS()
     {
-      if (Config.HasAgreedToTOS)
+      var plugin = Svc<EpubImporterPlugin>.Plugin;
+
+      if (plugin.Config.HasAgreedToTOS)
         return true;
 
       var consent = TermsOfLicense.AskConsent();
@@ -119,15 +121,22 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
       if (!consent)
         return false;
 
-      Config.HasAgreedToTOS = true;
+      plugin.Config.HasAgreedToTOS = true;
+      plugin.SaveConfig();
 
       return true;
     }
 
-    #endregion
+    public void SaveConfig()
+    {
+      SaveConfig(null);
+    }
 
+    private void SaveConfig(INotifyPropertyChanged config)
+    {
+      Svc.CollectionConfiguration.Save(Config);
+    }
 
-    #region Methods
 
     private void OpenFile()
     {
@@ -152,10 +161,15 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
     {
       try
       {
-        var book = EpubReader.Read(filepath);
+        var book = EpubReader.ReadBook(filepath);
+        if (book == null)
+        {
+          LogTo.Error("Failed to import Epub. Book was null.");
+          return;
+        }
+
         var parentId = CreateBookFolder(book);
         var parentEl = Svc.SM.Registry.Element[parentId];
-
         if (parentId < 1 || parentEl == null)
         {
           LogTo.Debug("Failed to create book folder.");
@@ -169,20 +183,51 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
           return;
         }
 
-        var baseUrl = Path.Combine(unzipped, Path.GetDirectoryName(book.Format.Ocf.RootFilePath));
-        foreach (var chapter in book.TableOfContents)
+        var imageFolder = GetImagesFolder(book, unzipped);
+        var htmlFolder = GetHtmlFolder(book, unzipped);
+        if (htmlFolder == null)
         {
-          if (ImportChapter(parentEl, book, chapter, baseUrl) == -1)
+          LogTo.Debug("Failed to get the unzipped path to html.");
+          return;
+        }
+
+        foreach (var chapter in book.ReadingOrder)
+        {
+          if (ImportChapter(parentEl, book, chapter, htmlFolder.FullName, imageFolder.FullName) == -1)
           {
             LogTo.Debug("Failed to import chapter.");
             break;
           }
         }
       }
-      catch (Exception e)
+      catch (IOException e)
       {
-        LogTo.Debug($"Failed to import {filepath} with exception {e}");
+        LogTo.Debug($"Failed to import {filepath} with IO Exception {e}");
       }
+    }
+
+    private DirectoryInfo GetHtmlFolder(EpubBook book, string unzipped)
+    {
+      var html = book?.Content?.Html;
+      if (html == null || !html.Any())
+        return null;
+
+      var fst = Path.Combine(book.Schema.ContentDirectoryPath,html.First().Key);
+      return fst == null
+        ? null
+        : new DirectoryInfo(Path.Combine(unzipped, Path.GetDirectoryName(fst.TrimStart('\\', '/'))));
+    }
+
+    private DirectoryInfo GetImagesFolder(EpubBook book, string unzipped)
+    {
+      var images = book?.Content?.Images;
+      if (images == null || !images.Any())
+        return null;
+
+      var fst = Path.Combine(book.Schema.ContentDirectoryPath, images.First().Key);
+      return fst == null
+        ? null
+        : new DirectoryInfo(Path.Combine(unzipped, Path.GetDirectoryName(fst.TrimStart('\\', '/'))));
     }
 
     private string UnzipEpub(string originalFilepath)
@@ -211,32 +256,50 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
     private References CreateBookReference(EpubBook book)
     {
       return new References()
-        .WithAuthor(string.Join(", ", book.Authors))
+        .WithAuthor(string.Join(", ", book.AuthorList))
         .WithTitle(book.Title);
     }
 
-    private References CreateChapterReference(EpubBook book, EpubChapter chapter)
+    private References CreateChapterReference(EpubBook book, string chapterContent)
     {
+      var parsedTitle = ParseTitle(chapterContent);
+      var title = parsedTitle != null
+        ? book.Title + ": " + parsedTitle
+        : book.Title;
+
       return new References()
-        .WithAuthor(string.Join(", ", book.Authors))
-        .WithTitle(book.Title + ": " + chapter.Title);
+        .WithAuthor(string.Join(", ", book.AuthorList))
+        .WithTitle(title);
     }
 
-    private int ImportChapter(IElement parentFolder, EpubBook book, EpubChapter chapter, string baseUrl)
+    private string ParseTitle(string html)
     {
-      var refs = CreateChapterReference(book, chapter);
+      var doc = new HtmlDocument();
+      doc.LoadHtml(html);
+
+      // Get first heading text
+      var fstHeader = doc.DocumentNode.SelectSingleNode("//h1|//h2|//h3|//h4|//h5|//h6");
+      if (fstHeader != null)
+        return fstHeader.InnerText.Replace("\n", "").Replace("\r", "");
+
+      // Get Title tag
+      var title = doc.DocumentNode.SelectSingleNode("//title");
+      if (title != null)
+        return title.InnerText.Replace("\n", "").Replace("\r", "");
+
+      return null;
+    }
+
+    private int ImportChapter(IElement parentFolder, EpubBook book, EpubTextContentFile text, string htmlFolder, string imageFolder)
+    {
+
       try
       {
-        string html = book.Resources.Html.Where(x => x.AbsolutePath == chapter.AbsolutePath).First().TextContent;
-        html = UpdateLocalLinks(html, baseUrl);
+        string html = text.Content;
+        var refs = CreateChapterReference(book, text.Content);
+        html = UpdateLocalLinks(html, htmlFolder, imageFolder);
         var chapterId = CreateSMTopic(html, refs, parentFolder);
         var chapterEl = Svc.SM.Registry.Element[chapterId];
-        if (chapterEl != null)
-        {
-          foreach (var sub in chapter.SubChapters)
-            ImportChapter(chapterEl, book, sub, baseUrl);
-        }
-
         return chapterId;
       }
       catch (Exception ex)
@@ -246,17 +309,21 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
       }
     }
 
-    private string UpdateLocalLinks(string html, string baseUrl)
+    private string UpdateLocalLinks(string html, string htmlFolder, string imageFolder)
     {
       // Change local links to absolute links
       var doc = new HtmlDocument();
       doc.LoadHtml(html);
       foreach (var node in doc.DocumentNode.Descendants())
       {
-        if (node.Name != "script")
+        if (node.Name.ToLower() == "img")
         {
-          AdjustAttributes(node, baseUrl, "href");
-          AdjustAttributes(node, baseUrl, "src");
+          AdjustAttributes(node, imageFolder, "src");
+        }
+        else
+        {
+          AdjustAttributes(node, htmlFolder, "href");
+          AdjustAttributes(node, htmlFolder, "src");
         }
       }
 
@@ -308,12 +375,13 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
 
       bool success = Svc.SM.Registry.Element.Add(
         out var val,
-        ElemCreationFlags.ForceCreate,
+        ElemCreationFlags.CreateSubfolders,
         new ElementBuilder(ElementType.Topic, contents.ToArray())
           .WithPriority(Config.DefaultPriority)
           .WithParent(parent)
           .WithStatus(dismissed ? ElementStatus.Dismissed : ElementStatus.Memorized)
           .DoNotDisplay()
+          .WithTemplate(Svc.SM.Registry.Template[Config.DefaultTemplate])
           .WithTitle(refs.Title)
           .WithReference((_) => refs)
       );
@@ -356,9 +424,17 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
     /// <inheritdoc />
     public override void ShowSettings()
     {
-      ConfigurationWindow.ShowAndActivate(HotKeyManager.Instance, Config);
+      ConfigurationWindow.ShowAndActivate("EpubImporter", HotKeyManager.Instance, Config);
     }
 
+
+
+    #endregion
+
+
+
+
+    #region Methods
 
     #endregion
   }

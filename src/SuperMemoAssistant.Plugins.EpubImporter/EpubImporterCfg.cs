@@ -1,11 +1,15 @@
 ﻿using Forge.Forms;
 using Forge.Forms.Annotations;
 using Newtonsoft.Json;
+using SuperMemoAssistant.Interop.SuperMemo.Registry.Members;
+using SuperMemoAssistant.Services;
 using SuperMemoAssistant.Services.UI.Configuration;
 using SuperMemoAssistant.Sys.ComponentModel;
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Linq;
 
 namespace SuperMemoAssistant.Plugins.EpubImporter
 {
@@ -50,6 +54,16 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
            StrictValidation = true)]
     public double DefaultPriority { get; set; } = 30;
 
+    [Field(Name = "Default Template")]
+    [SelectFrom("{Binding Templates}", DisplayPath = "Name", ValuePath = "Id", SelectionType = SelectionType.ComboBox)]
+    public int DefaultTemplate { get; set; } = -1;
+
+    [JsonIgnore]
+    public IEnumerable<TemplateShim> Templates =>
+      new List<TemplateShim> { new TemplateShim("(none)", -1) }
+        .Concat(Svc.SM.Registry.Template.Select(t => new TemplateShim(t)))
+        .ToList();
+
     [JsonIgnore]
     public bool IsChanged { get; set; }
 
@@ -65,7 +79,7 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
 
       string patreon = "https://www.patreon.com/experimental_learning";
       string coffee = "https://buymeacoffee.com/experilearning";
-      string github = "https://github.com/bjsi/SuperMemoAssistant.Plugins.HtmlTables";
+      string github = "https://github.com/bjsi/SuperMemoAssistant.Plugins.EpubImporter";
       string feedback = "https://feedback.experimental-learning.com/";
       string youtube = "https://www.youtube.com/channel/UCIaS9XDdQkvIjASBfgim1Uw";
       string twitter = "https://twitter.com/experilearning";
@@ -104,5 +118,34 @@ namespace SuperMemoAssistant.Plugins.EpubImporter
     }
 
     public event PropertyChangedEventHandler PropertyChanged;
+
+    public class TemplateShim
+    {
+      #region Constructors
+
+      public TemplateShim(ITemplate template)
+      {
+        Name = template.Name;
+        Id = template.Id;
+      }
+
+      public TemplateShim(string name, int id)
+      {
+        Name = name;
+        Id = id;
+      }
+
+      #endregion
+
+
+
+
+      #region Properties & Fields - Public
+
+      public string Name { get; }
+      public int Id { get; }
+
+      #endregion
+    }
   }
 }
